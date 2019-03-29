@@ -49,3 +49,8 @@ dist/
 # --------------------- PROJECT EXCLUSIONS ------------------------------------
 # Playground notebooks
 */test.ipynb
+
+# No log files
+log.csv
+*/log.csv
+.log
