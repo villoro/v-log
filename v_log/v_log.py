@@ -5,42 +5,12 @@
 
 import logging
 import sys
+
 from termcolor import colored
+from colorama import init
+
 import constants as c
 import utilities as u
-
-
-class _LoggerConsole(logging.Logger):
-    """
-        Custom log that extends default python log.
-        The purpose is to add colors for the terminal:
-            critical:   red
-            error:      red
-            warning:    yellow
-            info:       default (usually white)
-            debug:      green
-    """
-
-    def __init__(self, module_name):
-        super().__init__(module_name)
-
-        from colorama import init
-
-        init()
-
-    def critical(self, msg, *args, **kwargs):
-        super().critical(colored(msg, "red"), *args, **kwargs)
-
-    def error(self, msg, *args, **kwargs):
-        super().error(colored(msg, "red"), *args, **kwargs)
-
-    def warning(self, msg, *args, **kwargs):
-        super().warning(colored(msg, "yellow"), *args, **kwargs)
-
-    # No need to extend info since it has no color
-
-    def debug(self, msg, *args, **kwargs):
-        super().debug(colored(msg, "green"), *args, **kwargs)
 
 
 def get_csv_file_handler(uri_log, file_log_level):
@@ -82,7 +52,110 @@ def get_console_handler(console_log_level):
     return handler
 
 
-class _CustomLogger:
+def split_kwargs(**kwa_in):
+    """
+        This catches error and time from kwa_in while preserving the other kwargs.
+
+        Args:
+            kwa_in:     kwargs to read
+
+        Returns:
+            kwa_out:    kwargs with time and error
+            kwa_in:     kwargs without time and error
+    """
+    kwa_out = {}
+    for x in ["time", "error_name", "error", "error_line"]:
+        kwa_out[x] = ""
+
+    if "time" in kwa_in:
+        kwa_out["time"] = kwa_in["time"]
+
+        # Drop time from kwa_in
+        kwa_in.pop("time", None)
+
+    if "error" in kwa_in:
+        kwa_out["error_name"] = kwa_in["error"].__class__.__name__
+        kwa_out["error"] = u.to_one_line(kwa_in["error"])
+        kwa_out["error_line"] = sys.exc_info()[-1].tb_lineno
+
+        # Drop error from kwa_in
+        kwa_in.pop("error", None)
+
+    return kwa_out, kwa_in
+
+
+def concat_info_console(msg, **kwargs):
+    """ This will append time and error to the message for the terminal log """
+
+    # This ensures that | is painted
+    msg = "| " + msg
+
+    # Check if there is something in kwargs
+    mbool = False
+    for _, value in kwargs.items():
+        mbool += bool(value)
+
+    # If there is info about time or error, show it!
+    if mbool:
+        msg += "\n{:52}".format("")
+
+        if kwargs["time"]:
+            mtime = u.fancy_string_time_from_seconds(kwargs["time"])
+            msg += "| [Time]: {time:10} ".format(time=mtime)
+
+        if kwargs["error"]:
+            msg += "| [Error] [L: {error_line}]: ({error_name}) {error}".format(**kwargs)
+
+    return msg
+
+
+def concat_info_file(msg, **kwargs):
+    """ This will append time and error to the message for the file log """
+
+    kwargs["time"] = str(kwargs["time"]).replace(".", ",")
+
+    msg = "{};{time};{error_name};{error};{error_line}".format(msg, **kwargs)
+
+    # Crop last ; it will be used when time or error is missing
+    while msg[-1] == ";":
+        msg = msg[:-1]
+
+    return msg
+
+
+class _LoggerConsole(logging.Logger):
+    """
+        Custom log that extends default python log.
+        The purpose is to add colors for the terminal:
+            critical:   red
+            error:      red
+            warning:    yellow
+            info:       default (usually white)
+            debug:      green
+    """
+
+    def __init__(self, module_name):
+        super().__init__(module_name)
+
+        # Init colorama
+        init()
+
+    def critical(self, msg, *args, **kwargs):
+        super().critical(colored(msg, "red"), *args, **kwargs)
+
+    def error(self, msg, *args, **kwargs):
+        super().error(colored(msg, "red"), *args, **kwargs)
+
+    def warning(self, msg, *args, **kwargs):
+        super().warning(colored(msg, "yellow"), *args, **kwargs)
+
+    # No need to extend info since it has no color
+
+    def debug(self, msg, *args, **kwargs):
+        super().debug(colored(msg, "green"), *args, **kwargs)
+
+
+class VLogger:
     """
         Log class that saves prints messages with colors in the console.
         It also stores everything in a csv file.
@@ -100,77 +173,6 @@ class _CustomLogger:
             file_log_level:     minimum level of log events in order to be writed
             console_log_level:  minimum level of log events in order to be printed
     """
-
-    @staticmethod
-    def split_kwargs(**kwa_in):
-        """
-            This catches error and time from kwa_in
-
-            Args:
-                kwa_in:     kwargs to read
-
-            Returns:
-                kwa_out:    kwargs with time and error
-                kwa_in:     kwargs without time and error
-        """
-        kwa_out = {}
-        for x in ["time", "error_name", "error", "error_line"]:
-            kwa_out[x] = ""
-
-        if "time" in kwa_in:
-            kwa_out["time"] = kwa_in["time"]
-
-            # Drop time from kwa_in
-            kwa_in.pop("time", None)
-
-        if "error" in kwa_in:
-            kwa_out["error_name"] = kwa_in["error"].__class__.__name__
-            kwa_out["error"] = u.to_one_line(kwa_in["error"])
-            kwa_out["error_line"] = sys.exc_info()[-1].tb_lineno
-
-            # Drop error from kwa_in
-            kwa_in.pop("error", None)
-
-        return kwa_out, kwa_in
-
-    @staticmethod
-    def concat_info_console(msg, **kwargs):
-        """ This will append time and error for terminal """
-
-        # This ensures that | is painted
-        msg = "| " + msg
-
-        # Check if there is something in kwargs
-        mbool = False
-        for _, value in kwargs.items():
-            mbool += bool(value)
-
-        # If there is info about time or error, show it!
-        if mbool:
-            msg += "\n{:52}".format("")
-
-            if kwargs["time"]:
-                mtime = u.fancy_string_time_from_seconds(kwargs["time"])
-                msg += "| [Time]: {time:10} ".format(time=mtime)
-
-            if kwargs["error"]:
-                msg += "| [Error] [L: {error_line}]: ({error_name}) {error}".format(**kwargs)
-
-        return msg
-
-    @staticmethod
-    def concat_info_file(msg, **kwargs):
-        """ This will concat time and error info for file """
-
-        kwargs["time"] = str(kwargs["time"]).replace(".", ",")
-
-        msg = "{};{time};{error_name};{error};{error_line}".format(msg, **kwargs)
-
-        # Crop last ; it will be used when time or error is missing
-        while msg[-1] == ";":
-            msg = msg[:-1]
-
-        return msg
 
     def __init__(
         self,
@@ -202,11 +204,15 @@ class _CustomLogger:
             Auxiliar function to call both logs and apply extra things to the message
         """
 
-        kwa_extra, kwa_super = self.split_kwargs(**kwargs)
+        # Extract 'error' and 'time' from kwargs if present
+        kwa_extra, kwa_super = split_kwargs(**kwargs)
+
+        # Prevent multiline in message since it will break the 'csv'
         msg = u.to_one_line(msg)
 
-        func_c(self.concat_info_console(msg, **kwa_extra), *args, **kwa_super)
-        func_f(self.concat_info_file(msg, **kwa_extra), *args, **kwa_super)
+        # Call the the asked function and fix message for each log (file/console)
+        func_c(concat_info_console(msg, **kwa_extra), *args, **kwa_super)
+        func_f(concat_info_file(msg, **kwa_extra), *args, **kwa_super)
 
     def critical(self, msg, *args, **kwargs):
         """ Log critical problem """
