@@ -9,8 +9,8 @@ import sys
 from termcolor import colored
 from colorama import init
 
-import constants as c
-import utilities as u
+from . import constants as c
+from . import utilities as u
 
 
 def get_csv_file_handler(uri_log, file_log_level):

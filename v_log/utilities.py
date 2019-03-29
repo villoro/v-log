@@ -3,7 +3,7 @@
 """
 
 import os
-import constants as c
+from . import constants as c
 
 
 def fancy_string_time_from_seconds(input_seconds):
