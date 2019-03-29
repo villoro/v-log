@@ -52,12 +52,16 @@ def get_console_handler(console_log_level):
     return handler
 
 
-def get_kwargs(**kwargs):
+def get_kwargs(separator, **kwargs):
     """
         This catches error and time from kwargs while preserving the other kwargs.
 
         Args:
-            kwargs:     kwargs to read
+            separator:  csv separator
+        
+        Kwargs:
+            error:      error that caused the problem
+            time:       time in seconds
 
         Returns:
             kwargs with time and error (error_name, error, error_line)
@@ -157,6 +161,8 @@ class VLogger:
             uri_log:            uri of the file where log will be stored
             file_log_level:     minimum level of log events in order to be writed
             console_log_level:  minimum level of log events in order to be printed
+            csv_separator:      csv separator
+            base_path:          name of the root folder of the execution
     """
 
     def __init__(
@@ -165,10 +171,12 @@ class VLogger:
         uri_log=c.DEFAULT_URI_LOG,
         file_log_level=logging.INFO,
         console_log_level=logging.INFO,
+        csv_separator=c.DEFAULT_CSV_DELIMITER,
+        base_path=c.DEFAULT_BASE_PATH,
     ):
 
         # Fix module name
-        module_name = u.fix_module_name(module_name)
+        module_name = u.fix_module_name(module_name, base_path)
 
         # Add headers if needed
         u.create_file_headers(uri_log)
@@ -176,13 +184,12 @@ class VLogger:
         self.log_c = _LoggerConsole(module_name)
         self.log_f = logging.Logger(module_name)
 
-        # Default levels
-        self.log_c.setLevel(logging.DEBUG)
-        self.log_f.setLevel(logging.DEBUG)
-
         # Add handlers
         self.log_c.addHandler(get_console_handler(console_log_level))
         self.log_f.addHandler(get_csv_file_handler(uri_log, file_log_level))
+
+        # Keep that var
+        self.csv_separator = csv_separator
 
     def call_super(self, func_c, func_f, msg, *args, **kwargs):
         """
@@ -190,10 +197,10 @@ class VLogger:
         """
 
         # Extract 'error' and 'time' from kwargs if present
-        kwargs = get_kwargs(**kwargs)
+        kwargs = get_kwargs(self.csv_separator, **kwargs)
 
         # Prevent multiline in message since it will break the 'csv'
-        msg = u.to_one_line(msg)
+        msg = u.to_one_line(msg, self.csv_separator)
 
         # Call the the asked function and fix message for each log (file/console)
         func_c(concat_info_console(msg, **kwargs), *args)
