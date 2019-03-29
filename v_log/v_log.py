@@ -52,69 +52,58 @@ def get_console_handler(console_log_level):
     return handler
 
 
-def split_kwargs(**kwa_in):
+def get_kwargs(separator, **kwargs):
     """
-        This catches error and time from kwa_in while preserving the other kwargs.
+        This catches error and time from kwargs while preserving the other kwargs.
 
         Args:
-            kwa_in:     kwargs to read
+            separator:  csv separator
+        
+        Kwargs:
+            error:      error that caused the problem
+            time:       time in seconds
 
         Returns:
-            kwa_out:    kwargs with time and error
-            kwa_in:     kwargs without time and error
+            kwargs with time and error (error_name, error, error_line)
     """
-    kwa_out = {}
-    for x in ["time", "error_name", "error", "error_line"]:
-        kwa_out[x] = ""
+    out = {}
 
-    if "time" in kwa_in:
-        kwa_out["time"] = kwa_in["time"]
+    out["time"] = kwargs.get("time", None)
 
-        # Drop time from kwa_in
-        kwa_in.pop("time", None)
+    if "error" in kwargs:
+        out["error_name"] = kwargs["error"].__class__.__name__
+        out["error"] = u.to_one_line(kwargs["error"])
+        out["error_line"] = sys.exc_info()[-1].tb_lineno
 
-    if "error" in kwa_in:
-        kwa_out["error_name"] = kwa_in["error"].__class__.__name__
-        kwa_out["error"] = u.to_one_line(kwa_in["error"])
-        kwa_out["error_line"] = sys.exc_info()[-1].tb_lineno
-
-        # Drop error from kwa_in
-        kwa_in.pop("error", None)
-
-    return kwa_out, kwa_in
+    return out
 
 
-def concat_info_console(msg, **kwargs):
+def concat_info_console(msg, time=None, error=None, error_line=None, error_name=None):
     """ This will append time and error to the message for the terminal log """
 
     # This ensures that | is painted
     msg = "| " + msg
 
-    # Check if there is something in kwargs
-    mbool = False
-    for _, value in kwargs.items():
-        mbool += bool(value)
-
     # If there is info about time or error, show it!
-    if mbool:
+    if time is not None or error is not None:
         msg += "\n{:52}".format("")
 
-        if kwargs["time"]:
-            mtime = u.fancy_string_time_from_seconds(kwargs["time"])
-            msg += "| [Time]: {time:10} ".format(time=mtime)
+        if time:
+            msg += f"| [Time]: {u.fancy_string_time_from_seconds(time):10} "
 
-        if kwargs["error"]:
-            msg += "| [Error] [L: {error_line}]: ({error_name}) {error}".format(**kwargs)
+        if error:
+            msg += f"| [Error] [L: {error_line}]: ({error_name}) {error}"
 
     return msg
 
 
-def concat_info_file(msg, **kwargs):
+def concat_info_file(msg, time="", error="", error_line="", error_name=""):
     """ This will append time and error to the message for the file log """
 
-    kwargs["time"] = str(kwargs["time"]).replace(".", ",")
+    # If there is time, format it
+    time = str(time).replace(".", ",") if time else ""
 
-    msg = "{};{time};{error_name};{error};{error_line}".format(msg, **kwargs)
+    msg = f"{msg};{time};{error_name};{error};{error_line}"
 
     # Crop last ; it will be used when time or error is missing
     while msg[-1] == ";":
@@ -172,6 +161,8 @@ class VLogger:
             uri_log:            uri of the file where log will be stored
             file_log_level:     minimum level of log events in order to be writed
             console_log_level:  minimum level of log events in order to be printed
+            csv_separator:      csv separator
+            base_path:          name of the root folder of the execution
     """
 
     def __init__(
@@ -180,10 +171,12 @@ class VLogger:
         uri_log=c.DEFAULT_URI_LOG,
         file_log_level=logging.INFO,
         console_log_level=logging.INFO,
+        csv_separator=c.DEFAULT_CSV_DELIMITER,
+        base_path=c.DEFAULT_BASE_PATH,
     ):
 
         # Fix module name
-        module_name = u.fix_module_name(module_name)
+        module_name = u.fix_module_name(module_name, base_path)
 
         # Add headers if needed
         u.create_file_headers(uri_log)
@@ -191,13 +184,12 @@ class VLogger:
         self.log_c = _LoggerConsole(module_name)
         self.log_f = logging.Logger(module_name)
 
-        # Default levels
-        self.log_c.setLevel(logging.DEBUG)
-        self.log_f.setLevel(logging.DEBUG)
-
         # Add handlers
         self.log_c.addHandler(get_console_handler(console_log_level))
         self.log_f.addHandler(get_csv_file_handler(uri_log, file_log_level))
+
+        # Keep that var
+        self.csv_separator = csv_separator
 
     def call_super(self, func_c, func_f, msg, *args, **kwargs):
         """
@@ -205,14 +197,14 @@ class VLogger:
         """
 
         # Extract 'error' and 'time' from kwargs if present
-        kwa_extra, kwa_super = split_kwargs(**kwargs)
+        kwargs = get_kwargs(self.csv_separator, **kwargs)
 
         # Prevent multiline in message since it will break the 'csv'
-        msg = u.to_one_line(msg)
+        msg = u.to_one_line(msg, self.csv_separator)
 
         # Call the the asked function and fix message for each log (file/console)
-        func_c(concat_info_console(msg, **kwa_extra), *args, **kwa_super)
-        func_f(concat_info_file(msg, **kwa_extra), *args, **kwa_super)
+        func_c(concat_info_console(msg, **kwargs), *args)
+        func_f(concat_info_file(msg, **kwargs), *args)
 
     def critical(self, msg, *args, **kwargs):
         """ Log critical problem """
