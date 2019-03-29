@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name="v_log",
-    version="0.0.1",
+    version="1.0.0",
     author="Arnau Villoro",
     author_email="arnau@villoro.com",
     packages=["v_log"],
