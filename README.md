@@ -16,7 +16,7 @@ It works very similar to the regular `logging` library:
 
 ```python
 from v_log import VLogger
-log = VLogger()
+log = VLogger(__name__)
 
 log.critical("critical")
 log.error("error")
